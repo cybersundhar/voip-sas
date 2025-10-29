@@ -1,6 +1,6 @@
-# voip-sas
+# VoIP-SAS
 A simple python script written to perform a quick VoIP security assessment.
-
+Don't forget to mention the changes made with dated timestamps!
 
 # VoIP/SIP Security Assessment Tool
 
