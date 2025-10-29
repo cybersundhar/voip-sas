@@ -1,0 +1,340 @@
+Script Overview
+This is a VoIP/SIP Security Assessment Tool that tests Voice over IP systems for security vulnerabilities based on OWASP guidelines.
+
+1. VoIPDefaults Class
+Purpose: Stores default values and known vulnerabilities for VoIP systems.
+Attributes:
+DEFAULT_PORTS: Dictionary of common VoIP ports
+
+SIP (UDP/TCP): 5060
+SIP TLS: 5061
+RTP range: 10000-20000
+Other protocols: IAX2, MGCP, H.323, SCCP
+
+WEAK_CREDENTIALS: List of common default username/password combinations
+
+Examples: admin/admin, root/root, 1000/1000
+Used for testing if systems use default credentials
+
+COMMON_EXTENSIONS: List of typical SIP extension numbers
+
+Ranges: 100-105, 200-205, 1000-1005, etc.
+Used for extension enumeration attacks
+
+VULNERABLE_USER_AGENTS: Known VoIP server software that may have vulnerabilities
+
+Asterisk PBX, FreeSWITCH, Cisco, Polycom, etc.
+
+KNOWN_VULNS: Dictionary mapping vulnerable software to CVE numbers
+
+Contains version info and CVE identifiers for known exploits
+
+
+2. SIPParser Class
+Purpose: Parses SIP (Session Initiation Protocol) messages.
+__init__(self)
+Initializes the parser with list of valid SIP methods (INVITE, REGISTER, BYE, etc.)
+parse_message(self, data: str) -> Dict[str, Any]
+Purpose: Parses a complete SIP message into structured data
+Process:
+
+Splits message into lines using \r\n
+Parses first line to determine if it's a request or response
+Extracts headers (key: value pairs)
+Separates body content (after blank line)
+
+Returns: Dictionary with:
+
+type: 'request' or 'response'
+method: SIP method (for requests)
+status_code: Response code (for responses)
+headers: Dictionary of all headers
+body: Message body content
+
+extract_authentication(self, headers: Dict) -> Dict[str, str]
+Purpose: Extracts authentication details from SIP headers
+Looks for:
+
+WWW-Authenticate, Proxy-Authenticate, or Authorization headers
+Digest authentication: realm, nonce, algorithm
+Basic authentication
+
+Returns: Dictionary with authentication scheme and parameters
+extract_sdp(self, body: str) -> Dict[str, Any]
+Purpose: Extracts SDP (Session Description Protocol) information from message body
+Parses:
+
+Media types (audio, video)
+Port numbers for RTP streams
+Codec information
+IP addresses
+
+Returns: Dictionary with media streams, codecs, and addresses
+
+3. VoIPScanner Class
+Purpose: Performs network scanning and enumeration of VoIP services.
+__init__(self, target: str, timeout: int = 5)
+Initializes scanner with target IP/hostname and socket timeout.
+generate_sip_options(self, from_user: str = 'scanner') -> str
+Purpose: Creates a SIP OPTIONS request message
+How it works:
+
+Generates random Call-ID, tag, and branch identifiers
+Constructs properly formatted SIP message
+OPTIONS is used to query what methods the server supports
+
+Returns: Complete SIP OPTIONS request as string
+generate_sip_register(self, username: str, password: str = None, auth_response: Dict = None) -> str
+Purpose: Creates a SIP REGISTER request (for authentication testing)
+Two modes:
+
+Without auth: Initial registration to get challenge
+With auth: Second registration with digest response
+
+For digest authentication:
+
+Calculates MD5 hashes: HA1 = MD5(username:realm:password)
+Calculates HA2 = MD5(method:uri)
+Response = MD5(HA1:nonce:HA2)
+
+Returns: Complete SIP REGISTER request
+send_sip_message(self, message: str, port: int = 5060, protocol: str = 'udp') -> Optional[str]
+Purpose: Sends SIP message to target and receives response
+Process:
+
+Creates UDP or TCP socket
+Connects (if TCP) or sends directly (if UDP)
+Waits for response with timeout
+Returns decoded response or None on error
+
+Error handling: Catches timeouts and network errors gracefully
+fingerprint_server(self) -> Dict[str, Any]
+Purpose: Identifies the VoIP server type and capabilities
+Process:
+
+Tests common SIP ports (UDP/TCP 5060, TLS 5061)
+Sends OPTIONS request to each port
+Extracts server information from responses:
+
+User-Agent header
+Server header
+Supported SIP methods
+
+
+Checks for known vulnerabilities based on server version
+
+Returns: Dictionary with server fingerprint data
+enumerate_extensions(self, ext_list: List[str] = None) -> List[str]
+Purpose: Discovers valid SIP extensions/accounts
+How it works:
+
+Sends REGISTER for each extension
+Analyzes response codes:
+
+401/407 = Extension exists (auth required)
+404 = Extension doesn't exist
+
+
+Builds list of valid extensions
+
+Returns: List of valid extension numbers
+test_weak_credentials(self, extensions: List[str]) -> List[Dict]
+Purpose: Tests if extensions use default/weak passwords
+Process:
+
+For each extension, try common passwords
+First REGISTER gets authentication challenge
+Second REGISTER attempts login with password
+200 OK response means credentials work
+
+Returns: List of compromised accounts with credentials
+
+4. OWASPVoIPChecker Class
+Purpose: Defines OWASP VoIP Security Top 10 controls
+OWASP_CONTROLS
+Static list of 10 critical VoIP security controls:
+
+V1: Authentication Bypass
+V2: Request Spoofing
+V3: Eavesdropping (no encryption)
+V4: Denial of Service
+V5: Malformed Messages
+V6: VLAN Hopping
+V7: Credential Disclosure
+V8: DTMF Injection
+V9: Firmware Vulnerabilities
+V10: Physical Security
+
+Each control has severity, description, and check type.
+
+5. VoIPAuditor Class
+Purpose: Main orchestrator for the security assessment.
+__init__(self, target, output_file, aggressive, exceptions_file)
+Initializes the auditor with:
+
+Scanner instance
+Finding storage
+Statistics tracking
+Exceptions for approved deviations
+
+_load_exceptions(self, exceptions_file: str) -> Dict
+Purpose: Loads JSON file of approved security exceptions
+
+Allows organizations to document accepted risks
+
+is_exception(self, control_id: str) -> bool
+Purpose: Checks if a finding is an approved exception
+
+Skips reporting if exception exists
+
+add_finding(self, severity, category, title, description, evidence, remediation, control_id, confidence)
+Purpose: Records a security finding
+Parameters:
+
+severity: CRITICAL, HIGH, MEDIUM, LOW
+category: Authentication, Encryption, etc.
+title: Brief description
+description: Detailed explanation
+evidence: Proof of vulnerability
+remediation: How to fix it
+control_id: Maps to OWASP control
+confidence: Reliability of finding
+
+Skips findings that are approved exceptions.
+Security Check Functions
+Each function tests a specific security aspect:
+check_authentication(self)
+Tests:
+
+Does server require authentication?
+Is Basic auth (weak) used?
+Is MD5 digest (outdated) used?
+
+Findings:
+
+Unauthenticated access allowed
+Weak authentication schemes
+
+check_encryption(self)
+Tests:
+
+Is TLS available for SIP signaling?
+Is SRTP used for media encryption?
+
+Process:
+
+Checks if port 5061 (TLS) is open
+Examines SDP for SRTP protocols (SAVP/SAVPF)
+
+Findings:
+
+No TLS support
+Unencrypted RTP streams
+
+check_weak_credentials(self)
+Tests: Extensions for default passwords
+Process:
+
+Enumerates extensions
+Tests weak credential list
+Reports compromised accounts
+
+check_information_disclosure(self)
+Tests: Server banner reveals version info
+Finds: Version numbers in User-Agent/Server headers that help attackers
+check_vulnerabilities(self)
+Tests: Server matches known vulnerable versions
+Process:
+
+Compares fingerprint to KNOWN_VULNS database
+Reports CVE numbers and descriptions
+
+check_dos_protection(self)
+Tests: Rate limiting and DoS protection
+Process:
+
+Sends 10 rapid requests
+If all succeed, no rate limiting exists
+
+check_enumeration_protection(self)
+Tests: Can attackers enumerate valid extensions?
+Process:
+
+Tests valid vs invalid extension
+If responses differ, enumeration is possible
+
+check_allowed_methods(self)
+Tests: Are dangerous SIP methods enabled?
+Checks for: MESSAGE, SUBSCRIBE, NOTIFY, REFER
+
+These can be abused for spam, eavesdropping
+
+check_network_exposure(self)
+Tests: Is VoIP service exposed on public internet?
+Checks:
+
+Is target IP public (not private)?
+Should be behind VPN/firewall
+
+generate_executive_summary(self) -> str
+Purpose: Creates high-level risk summary for management
+Calculates:
+
+Risk Score: CRITICAL×10 + HIGH×5 + MEDIUM×2 + LOW×1
+Risk Level: CRITICAL (>50), HIGH (>20), MEDIUM (>10), LOW
+Lists top 5 critical/high findings
+
+generate_report(self)
+Purpose: Creates comprehensive security report
+Sections:
+
+Executive Summary
+Fingerprinting Results
+Detailed Findings (sorted by severity)
+Prioritized Action Plan
+
+Outputs:
+
+Text report (human-readable)
+JSON report (machine-readable)
+
+run_assessment(self)
+Purpose: Executes the complete security assessment
+Phases:
+
+Fingerprinting: Identify server and capabilities
+Enumeration: Discover extensions (if aggressive)
+Security Checks: Run all vulnerability tests
+
+Returns: True if assessment completed, False if target unreachable
+
+6. main() Function
+Purpose: Command-line interface and program entry point
+Process:
+
+Parses command-line arguments
+Shows warning for aggressive mode
+Creates VoIPAuditor instance
+Runs assessment
+Generates reports
+Sets exit codes based on findings
+
+Exit Codes:
+
+0: Success, no critical/high issues
+1: High severity findings
+2: Critical severity findings
+3: Assessment failed
+
+
+How the Script Works End-to-End
+
+User runs script with target IP
+Fingerprinting phase: Discovers what VoIP server is running
+Enumeration phase (if aggressive): Finds valid extensions
+Security testing phase: Runs 8+ security checks
+Each check looks for specific vulnerabilities and calls add_finding()
+Report generation: Organizes findings by severity
+Output: Creates text and JSON reports with remediation advice
+
+The script is non-destructive (doesn't exploit vulnerabilities) and focuses on identification and assessment for authorized security testing.RetryClaude can make mistakes. Please double-check responses.
