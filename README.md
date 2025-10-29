@@ -344,10 +344,10 @@ Contributions welcome! Please submit pull requests for:
 
 ## License
 
-This tool is provided for educational and authorized testing purposes only.
+This tool is provided for EDUCATIONAL AND TESTING PURPOSES ONLY.
 
 ---
 
 **Version**: 1.0  
 **Last Updated**: 2025  
-**Author**: VoIP Security Research Team
+**Author**: Sundhararajan VS
